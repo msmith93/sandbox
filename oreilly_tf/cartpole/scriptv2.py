@@ -19,7 +19,7 @@ model = keras.models.Sequential([
   ])
 
 try:
-  f_obj = open('output.csv', 'a')
+  f_obj = open('output.csv', 'w')
   writer_obj = csv.writer(f_obj)
 
   env = gym.make("GymV21Environment-v0", env_id="CartPole-v1", render_mode="rgb_array")
@@ -117,6 +117,7 @@ try:
 finally:
   print(model.trainable_variables)
   f_obj.close()
+  model.save("final_model.keras")
   #env.render()
   #for i in range(0, 100):
   #  env.render()
