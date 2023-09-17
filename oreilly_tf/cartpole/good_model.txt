@@ -1,0 +1,13 @@
+[<tf.Variable 'dense/kernel:0' shape=(4, 5) dtype=float32, numpy=
+array([[ 0.41515857, -0.38518026, -0.18130684, -0.5516527 ,  0.7611623 ],
+       [ 0.15485452, -0.23525831, -0.05520153,  0.6495737 ,  0.6853924 ],
+       [ 0.5412208 ,  1.2217971 , -1.8722208 ,  0.66456974,  0.39301103],
+       [-0.21261865,  1.3477937 , -0.06998852,  1.512963  ,  0.49938837]],
+      dtype=float32)>, <tf.Variable 'dense/bias:0' shape=(5,) dtype=float32, numpy=
+array([-0.39757153,  0.27316186,  0.15749988,  0.19073634,  0.05090838],
+      dtype=float32)>, <tf.Variable 'dense_1/kernel:0' shape=(5, 1) dtype=float32, numpy=
+array([[-0.5703448 ],
+       [-1.4260877 ],
+       [ 0.92811525],
+       [-1.4913776 ],
+       [-0.31325296]], dtype=float32)>, <tf.Variable 'dense_1/bias:0' shape=(1,) dtype=float32, numpy=array([0.26863384], dtype=float32)>]
