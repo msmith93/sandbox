@@ -14,9 +14,9 @@ print("GPU count: " + str(len(gpu_devices)))
 # Set up the neural net (does it get set with random weights and biases at first?)
 n_inputs = 4
 model = keras.models.Sequential([
-  keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
-  keras.layers.Dense(1, activation="sigmoid"),
-  ])
+ keras.layers.Dense(5, activation="elu", input_shape=[n_inputs]),
+ keras.layers.Dense(1, activation="sigmoid"),
+ ])
 
 try:
   f_obj = open('output.csv', 'w')
@@ -106,6 +106,8 @@ try:
     all_mean_grads = []
     for var_index in range(len(model.trainable_variables)):
 
+      # Figure out the average gradients for each weight by giving more priority
+      # to episodes with a larger reward
       mean_grads = tf.reduce_mean(
         [final_reward * all_grads[episode_index][step][var_index]
         for episode_index, final_rewards in enumerate(all_final_rewards)
@@ -113,11 +115,10 @@ try:
 
       all_mean_grads.append(mean_grads)
 
+    # Update the model based on these gradients
     optimizer.apply_gradients(zip(all_mean_grads, model.trainable_variables))
 finally:
   print(model.trainable_variables)
   f_obj.close()
   model.save("final_model.keras")
-  #env.render()
-  #for i in range(0, 100):
-  #  env.render()
+  print("saved model!")
