@@ -1,0 +1,7 @@
+tf-agents
+keras
+numpy
+ale-py
+opencv-python
+gym[accept-rom-license]
+typing_extensions==4.5.0
