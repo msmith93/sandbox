@@ -46,6 +46,8 @@ env = suite_atari.load(environment_name, max_episode_steps=max_episode_steps,
 tf_env = TFPyEnvironment(env)
 out = tf_env.reset()
 
+print("Environment has been reset")
+
 preprocessing_layer = keras.layers.Lambda(
   lambda obs: tf.cast(obs, np.float32) / 255.)
 conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
@@ -74,16 +76,20 @@ agent = DqnAgent(tf_env.time_step_spec(),
                  train_step_counter=train_step,
                  epsilon_greedy=lambda: epsilon_fn(train_step))
 
+print("Agent initializing...")
 agent.initialize()
+print("Agent initialized")
 
 policy_dir = os.path.join(os.getcwd(), 'policy')
 tf_policy_saver = policy_saver.PolicySaver(agent.policy)
 
+print("Creating replay buffer...")
 replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
   data_spec=agent.collect_data_spec,
   batch_size=tf_env.batch_size,
-  max_length=1000000
+  max_length=200000
 )
+print("Replay buffer created...")
 
 replay_buffer_observer = replay_buffer.add_batch
 
@@ -109,7 +115,10 @@ init_driver = DynamicStepDriver(
   observers=[replay_buffer.add_batch, ShowProgress(20000)],
   num_steps=1000 #20000
 )
+
+print("Running init driver...")
 final_time_step, final_policy_state = init_driver.run()
+print("Init Driver complete")
 
 dataset = replay_buffer.as_dataset(
   sample_batch_size=64,

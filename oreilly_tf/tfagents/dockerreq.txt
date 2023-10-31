@@ -1,7 +1,9 @@
 tf-agents
 keras
 numpy
-ale-py
 opencv-python
-gym[accept-rom-license]
+gym==0.23.0
+AutoROM==0.4.2
+AutoROM.accept-rom-license==0.6.1
+ale-py==0.7.5
 typing_extensions==4.5.0
