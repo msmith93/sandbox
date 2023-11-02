@@ -53,6 +53,7 @@ preprocessing_layer = keras.layers.Lambda(
 conv_layer_params=[(32, (8, 8), 4), (64, (4, 4), 2), (64, (3, 3), 1)]
 fc_layer_params=[512]
 
+
 q_net = QNetwork(
   tf_env.observation_spec(),
   tf_env.action_spec(),
@@ -113,7 +114,7 @@ init_driver = DynamicStepDriver(
   tf_env,
   initial_collect_policy,
   observers=[replay_buffer.add_batch, ShowProgress(20000)],
-  num_steps=1000 #20000
+  num_steps=20000
 )
 
 print("Running init driver...")
@@ -137,13 +138,12 @@ def train_agent(n_iterations):
     time_step, policy_state = collect_driver.run(time_step, policy_state)
     trajectories, buffer_info = next(iterator)
     train_loss = agent.train(trajectories)
-    print("\r{} loss:{:.5f}".format(
-      iteration, train_loss.loss.numpy()), end=""
-    )
     if iteration % 1000 == 0:
-      log_metrics(train_metrics)
+      print("\r{} loss:{:.5f}".format(
+        iteration, train_loss.loss.numpy()), end=""
+      )
 
-train_agent(1000)
+train_agent(1000000)
 
 tf_policy_saver.save(policy_dir)
 

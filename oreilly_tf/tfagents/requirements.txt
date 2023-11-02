@@ -55,7 +55,7 @@ tensorflow-estimator==2.14.0
 tensorflow-io-gcs-filesystem==0.34.0
 tensorflow-probability==0.22.1
 termcolor==2.3.0
-tf-agents==0.18.0
+tf-agents-nightly @ file:///home/msmith/opensource/second/agents
 tfp-nightly==0.23.0.dev20231027
 tqdm==4.66.1
 typing_extensions==4.5.0
