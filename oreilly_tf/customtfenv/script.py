@@ -43,7 +43,7 @@ tf_env = TFPyEnvironment(timelimit_env)
 time_step = timelimit_env.reset()
 print(time_step)
 
-fc_layer_params = (10,)
+fc_layer_params = (32,)
 
 q_net = QNetwork(
   tf_env.observation_spec(),
@@ -100,8 +100,8 @@ initial_collect_policy = RandomTFPolicy(tf_env.time_step_spec(), tf_env.action_s
 init_driver = DynamicStepDriver(
   tf_env,
   initial_collect_policy,
-  observers=[replay_buffer.add_batch, ShowProgress(20000)],
-  num_steps=20000
+  observers=[replay_buffer.add_batch, ShowProgress(2000)],
+  num_steps=2000
 )
 
 print("Running init driver...")
@@ -130,7 +130,7 @@ def train_agent(n_iterations):
         iteration, train_loss.loss.numpy()), end=""
       )
 
-train_agent(100000)
+train_agent(50000)
 
 tf_policy_saver.save(policy_dir)
 

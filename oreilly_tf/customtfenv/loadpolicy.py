@@ -28,7 +28,7 @@ for device in gpu_devices:
   tf.config.experimental.set_memory_growth(device, True)                        
 print("GPU count: " + str(len(gpu_devices)))
 
-max_episode_steps = 27000
+max_episode_steps = 500
 
 environment = FindMiddleSquareGameEnv()
 timelimit_env = wrappers.TimeLimit(environment, duration=max_episode_steps)
@@ -61,5 +61,8 @@ for i in range(num_episodes):
         if time_step.step_type[0] == 2: # Episode end
             episode_end = True
         
-    
-    print(f"Episode {i}\nReward: {reward}\nNum steps: {episode_steps}\nStarting point; {starting_point}")
+    starting_dist = abs(5 - starting_point[0][0]) + abs(5 - starting_point[0][1])
+    if episode_steps == starting_dist:
+        print("Optimal!")
+    else:
+        print(f"Episode {i}\nReward: {reward}\nNum steps: {episode_steps}\nStarting point; {starting_point}")

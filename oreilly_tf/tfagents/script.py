@@ -73,7 +73,7 @@ agent = DqnAgent(tf_env.time_step_spec(),
                  optimizer=optimizer,
                  target_update_period=2000,
                  td_errors_loss_fn=keras.losses.Huber(reduction="none"),
-                 gamma=0.99,
+                 gamma=0.99, # discount factor
                  train_step_counter=train_step,
                  epsilon_greedy=lambda: epsilon_fn(train_step))
 

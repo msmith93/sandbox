@@ -40,7 +40,7 @@ time_step = tf_env.reset()
 print("Environment has been reset")
 
 
-policy_dir = os.path.join(os.getcwd(), 'policy')
+policy_dir = os.path.join(os.getcwd(), 'policy11022023')
 saved_policy = tf.compat.v2.saved_model.load(policy_dir)
 policy_state = saved_policy.get_initial_state(batch_size=3)
 
