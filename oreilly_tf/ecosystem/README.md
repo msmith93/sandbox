@@ -20,4 +20,5 @@
 * If an individual survives for X steps, they can reproduce
 * There is a population cap
 * Thoughts
-  * If this runs long enough, will they all just be moving along the same exact path at the same time? Do we need a way to ensure they don't occupy the same cell? 
+  * If this runs long enough, will they all just be moving along the same exact path at the same time? Do we need a way to ensure they don't occupy the same cell?
+    * We can probably make it so that if two individuals reach food at the same time, it is given to one of them randomly
