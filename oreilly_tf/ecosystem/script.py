@@ -16,6 +16,9 @@ from tf_agents.policies import policy_saver
 import os
 from enum import Enum
 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
 OrganismAction = Enum('OrganismAction', ['UP', 'RIGHT', 'DOWN', 'LEFT'], start=0)
 CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS'], start=0)
 
@@ -23,6 +26,8 @@ CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS']
 food_positions = {}
 organism_positions = {}
 DIMENSIONS = (10, 10)
+GAME_STEPS = 50
+game_history = []
 
 class Food:
     state = None
@@ -93,6 +98,13 @@ class Driver:
 
         self._fill_cell_contents()
     
+    def track_board(self):
+        step_data = {
+            "food_positions": list(food_positions.keys()).copy(),
+            "organism_positions": list(organism_positions.keys()).copy()
+        }
+        game_history.append(step_data)
+
     # Just for troubleshooting
     def print_board(self):
         board_contents = np.zeros(shape=self.dimensions, dtype=np.int32)
@@ -204,10 +216,44 @@ class Driver:
 
         for step in range(max_steps):
             print(f"Running step {step}")
-            self.print_board()
+            
+            # Only enable when you want to animate
+            self.track_board()
+
             result = self._step()
 
 
 driver = Driver((DIMENSIONS[0], DIMENSIONS[1]), 50, 20)
 
-driver.run(max_steps=5)
+driver.run(max_steps=GAME_STEPS)
+
+
+
+
+def animation_update(frame):
+    ax.clear()
+
+    game_step = game_history[frame]
+    org_x = [x for x,y in game_step.get("organism_positions")]
+    org_y = [y for x,y in game_step.get("organism_positions")]
+
+    food_x = [x for x,y in game_step.get("food_positions")]
+    food_y = [y for x,y in game_step.get("food_positions")]
+
+    boundaries_x = [-1, -1, DIMENSIONS[0] + 1, DIMENSIONS[0] + 1]
+    boundaries_y = [-1, DIMENSIONS[1] + 1, -1, DIMENSIONS[1] + 1]
+
+
+    organism_scat = ax.scatter(org_x, org_y, c="r")
+    food_scat = ax.scatter(food_x, food_y, c="g")
+    boundaries_scat = ax.scatter(boundaries_x, boundaries_y, c="y")
+    return (organism_scat, food_scat)
+
+fig, ax = plt.subplots()
+
+
+scat = ax.scatter(0, 0, c="b", s=5, )
+
+ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=1000)
+
+plt.show()
