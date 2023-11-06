@@ -215,6 +215,8 @@ class Driver:
             organism_positions[organism.position] = True
             if "reward" in result:
                 organism.eat_food()
+                organism_offspring = Organism(organism.position, [])
+                self.organisms.append(organism_offspring)
 
         if random.randint(0, 100) > self.food_spawn_rate:
             self._add_new_food(1)
