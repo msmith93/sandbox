@@ -17,39 +17,15 @@ import os
 from enum import Enum
 
 OrganismAction = Enum('OrganismAction', ['UP', 'RIGHT', 'DOWN', 'LEFT'], start=0)
-CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS'], start=0)
-
-
-class Ecosystem:
-    dimensions = (10,10)
-    initial_food_count = 20
-    initial_organism_count = 5
-    food_spawn_rate = 0.2
-
-    def __init__(self, dimensions, initial_food_count, initial_organism_count):
-        self.state = self.EcosystemState(self.dimensions)
-        self.dimensions = dimensions
-        self.initial_food_count = initial_food_count
-        self.initial_organism_count = initial_organism_count
-
-    class EcosystemState:
-        cell_data = None 
-
-        def __init__(self, dimensions):
-            print("state init")
-            self.cell_data = np.empty(dimensions, dtype=np.int32)
-            self.cell_data.fill(CellContents.EMPTY.value)
 
 
 class Food:
     state = None
-    cell_content = CellContents.FOOD.value
 
     def __init__(self, position):
-        self.state = position
+        self.position = position
 
 class Organism:
-    cell_content = CellContents.ORGANISM.value
     neural_net = None
     position = None
 
@@ -63,36 +39,49 @@ class Organism:
     def act(self):
         action = self._action_policy(self.position)
         return action
+    
+food_positions = {}
+organism_positions = {}
 
 class Driver:
+    dimensions = (10,10)
+    initial_food_count = 20
+    initial_organism_count = 5
+    food_spawn_rate = 0.2
+
     def __init__(self, dimensions, initial_food_count, initial_organism_count):
         self.organisms = []
         self.food = []
+        self.dimensions = dimensions
 
-        self.ecosystem = Ecosystem(dimensions, initial_food_count, initial_organism_count)
         self._fill_cell_contents(initial_food_count, initial_organism_count)
     
     def _fill_cell_contents(self, initial_food_count, initial_organism_count):
         food_tracker = initial_food_count
 
         while food_tracker > 0:
-            x_rand_cell = random.randint(0, self.ecosystem.dimensions[0] - 1)
-            y_rand_cell = random.randint(0, self.ecosystem.dimensions[1] - 1)
-            cell_contents = self.ecosystem.state.cell_data[x_rand_cell][y_rand_cell]
-
-            if cell_contents == CellContents.EMPTY.value:
-                self.ecosystem.state.cell_data[x_rand_cell][y_rand_cell] = CellContents.FOOD.value
+            x_rand_cell = random.randint(0, self.dimensions[0] - 1)
+            y_rand_cell = random.randint(0, self.dimensions[1] - 1)
+            
+            if (x_rand_cell, y_rand_cell) in food_positions:
+                continue
+            else:
+                food_positions[(x_rand_cell, y_rand_cell)] = True
                 food_tracker -= 1
+                piece_of_food = Food((x_rand_cell, y_rand_cell))
+
+                self.food.append(piece_of_food)
         
         organism_tracker = initial_organism_count
 
         while organism_tracker > 0:
-            x_rand_cell = random.randint(0, self.ecosystem.dimensions[0] - 1)
-            y_rand_cell = random.randint(0, self.ecosystem.dimensions[1] - 1)
-            cell_contents = self.ecosystem.state.cell_data[x_rand_cell][y_rand_cell]
+            x_rand_cell = random.randint(0, self.dimensions[0] - 1)
+            y_rand_cell = random.randint(0, self.dimensions[1] - 1)
 
-            if cell_contents == CellContents.EMPTY.value:
-                self.ecosystem.state.cell_data[x_rand_cell][y_rand_cell] = CellContents.ORGANISM.value
+            if (x_rand_cell, y_rand_cell) in organism_positions or (x_rand_cell, y_rand_cell) in food_positions:
+                continue
+            else:
+                organism_positions[(x_rand_cell, y_rand_cell)] = True
                 organism_tracker -= 1
                 organism = Organism((x_rand_cell, y_rand_cell), (4,))
                 
@@ -119,7 +108,7 @@ class Driver:
 
 driver = Driver((10, 10), 20, 5)
 
-print(driver.ecosystem.state.cell_data)
-print(driver.organisms)
+print([x.position for x in driver.organisms])
+print([x.position for x in driver.food])
 
-driver.run(max_steps=10)
+# driver.run(max_steps=10)
