@@ -26,7 +26,7 @@ CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS']
 food_positions = {}
 organism_positions = {}
 DIMENSIONS = (10, 10)
-GAME_STEPS = 50
+GAME_STEPS = 200
 game_history = []
 
 class Food:
@@ -39,7 +39,7 @@ class Organism:
     neural_net = None
     position = None
     vision_distance = 3
-    max_energy = 20
+    max_energy = 15
 
     def __init__(self, position, neural_net):
         self.position = position
@@ -50,7 +50,9 @@ class Organism:
         return random.choice(list(OrganismAction)).value
 
     def get_desired_action(self):
-        obs = [self.position, self._look_around()]
+        # vision = self._look_around()
+        vision = []
+        obs = [self.position, vision]
         action = self._action_policy(obs)
         
         return action
@@ -87,11 +89,11 @@ class Organism:
         return observable_space
 
 class Driver:
-    food_spawn_rate = 0.2
+    # 20% spawn rate
+    food_spawn_rate = 12
 
     def __init__(self, dimensions, initial_food_count, initial_organism_count):
-        self.organisms = {}
-        self.food = {}
+        self.organisms = []
         self.dimensions = dimensions
         self.initial_food_count = initial_food_count
         self.initial_organism_count = initial_organism_count
@@ -119,9 +121,12 @@ class Driver:
                     board_contents[x_pos][y_pos] = CellContents.ORGANISM.value
         
         print(board_contents)
+    
+    def _add_new_food(self, food_count):
+        food_tracker = food_count
 
-    def _fill_cell_contents(self):
-        food_tracker = self.initial_food_count
+        if len(food_positions) == (DIMENSIONS[0] * DIMENSIONS[1]) - 1:
+            return
 
         while food_tracker > 0:
             x_rand_cell = random.randint(0, self.dimensions[0] - 1)
@@ -132,9 +137,9 @@ class Driver:
             else:
                 food_positions[(x_rand_cell, y_rand_cell)] = True
                 food_tracker -= 1
-                piece_of_food = Food((x_rand_cell, y_rand_cell))
 
-                self.food[(x_rand_cell, y_rand_cell)] = piece_of_food
+    def _fill_cell_contents(self):
+        self._add_new_food(self.initial_food_count)
         
         organism_tracker = self.initial_organism_count
 
@@ -149,13 +154,13 @@ class Driver:
                 organism_tracker -= 1
                 organism = Organism((x_rand_cell, y_rand_cell), (4,))
                 
-                self.organisms[(x_rand_cell, y_rand_cell)] = organism
+                self.organisms.append(organism)
     
     def _get_target_pos(self, position, action):
         target_position = list(position)
-        if action == OrganismAction.UP.value and position[1] < DIMENSIONS[1]:
+        if action == OrganismAction.UP.value and position[1] < DIMENSIONS[1] - 1:
             target_position[1] += 1
-        elif action == OrganismAction.RIGHT.value and position[0] < DIMENSIONS[0]:
+        elif action == OrganismAction.RIGHT.value and position[0] < DIMENSIONS[0] - 1:
             target_position[0] += 1
         elif action == OrganismAction.DOWN.value and position[1] > 0:
             target_position[1] -= 1
@@ -185,14 +190,13 @@ class Driver:
 
             # O(n)? Seems like it shouldn't be
             food_positions.pop(target_pos)
-            self.food.pop(target_pos)
         
         return final_results
     
     def _step(self):
 
         organism_actions = {}
-        for organism in self.organisms.values():
+        for organism in self.organisms:
             organism_action = organism.get_desired_action()
 
             organism_actions[organism] = organism_action
@@ -202,16 +206,20 @@ class Driver:
         organism_positions.clear()
 
         for organism, result in results.items():
+            organism.energy -= 1
+
+            if organism.energy == 0:
+                self.organisms.remove(organism)
             
             organism.position = result.get("position")
             organism_positions[organism.position] = True
             if "reward" in result:
                 organism.eat_food()
-            
-            organism.energy -= 1
-        
-        print(organism_positions)
 
+        if random.randint(0, 100) > self.food_spawn_rate:
+            self._add_new_food(1)
+            
+        
     def run(self, max_steps=100):         
 
         for step in range(max_steps):
@@ -240,8 +248,8 @@ def animation_update(frame):
     food_x = [x for x,y in game_step.get("food_positions")]
     food_y = [y for x,y in game_step.get("food_positions")]
 
-    boundaries_x = [-1, -1, DIMENSIONS[0] + 1, DIMENSIONS[0] + 1]
-    boundaries_y = [-1, DIMENSIONS[1] + 1, -1, DIMENSIONS[1] + 1]
+    boundaries_x = [-1, -1, DIMENSIONS[0], DIMENSIONS[0]]
+    boundaries_y = [-1, DIMENSIONS[1], -1, DIMENSIONS[1]]
 
 
     organism_scat = ax.scatter(org_x, org_y, c="r")
@@ -254,6 +262,8 @@ fig, ax = plt.subplots()
 
 scat = ax.scatter(0, 0, c="b", s=5, )
 
-ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=1000)
+ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100)
 
 plt.show()
+
+# ani.save(filename="./pillow_example.gif", writer="pillow")
