@@ -27,7 +27,12 @@ food_positions = {}
 organism_positions = {}
 DIMENSIONS = (10, 10)
 GAME_STEPS = 200
+INITIAL_FOOD = 50
+INITIAL_ORG = 10
+MARKER_SIZE = 4
 game_history = []
+food_y_stack = []
+org_y_stack = []
 
 class Food:
     state = None
@@ -89,8 +94,9 @@ class Organism:
         return observable_space
 
 class Driver:
-    # 20% spawn rate
-    food_spawn_rate = 12
+    # 20% chance to spawn 1 food each frame
+    food_spawn_rate = 1
+    food_spawn_perc = 20
 
     def __init__(self, dimensions, initial_food_count, initial_organism_count):
         self.organisms = []
@@ -103,7 +109,7 @@ class Driver:
     def track_board(self):
         step_data = {
             "food_positions": list(food_positions.keys()).copy(),
-            "organism_positions": list(organism_positions.keys()).copy()
+            "organism_positions": list(organism_positions.keys()).copy(),
         }
         game_history.append(step_data)
 
@@ -125,7 +131,8 @@ class Driver:
     def _add_new_food(self, food_count):
         food_tracker = food_count
 
-        if len(food_positions) == (DIMENSIONS[0] * DIMENSIONS[1]) - 1:
+        # Make sure we don't try to spawn food if all tiles already have food
+        if len(food_positions) == (DIMENSIONS[0] * DIMENSIONS[1]) - self.food_spawn_rate:
             return
 
         while food_tracker > 0:
@@ -218,8 +225,8 @@ class Driver:
                 organism_offspring = Organism(organism.position, [])
                 self.organisms.append(organism_offspring)
 
-        if random.randint(0, 100) > self.food_spawn_rate:
-            self._add_new_food(1)
+        if random.randint(0, 100) > self.food_spawn_perc:
+            self._add_new_food(self.food_spawn_rate)
             
         
     def run(self, max_steps=100):         
@@ -233,7 +240,7 @@ class Driver:
             result = self._step()
 
 
-driver = Driver((DIMENSIONS[0], DIMENSIONS[1]), 50, 20)
+driver = Driver((DIMENSIONS[0], DIMENSIONS[1]), INITIAL_FOOD, INITIAL_ORG)
 
 driver.run(max_steps=GAME_STEPS)
 
@@ -241,28 +248,50 @@ driver.run(max_steps=GAME_STEPS)
 
 
 def animation_update(frame):
-    ax.clear()
+    global food_y_stack
+    global org_y_stack
+
+    ax[0].clear()
 
     game_step = game_history[frame]
+
+    food_len = len(game_step.get("food_positions"))
+    org_len = len(game_step.get("organism_positions"))
+
     org_x = [x for x,y in game_step.get("organism_positions")]
     org_y = [y for x,y in game_step.get("organism_positions")]
+    org_marker_size = [MARKER_SIZE for x in range(org_len)]
 
     food_x = [x for x,y in game_step.get("food_positions")]
     food_y = [y for x,y in game_step.get("food_positions")]
+    food_marker_size = [MARKER_SIZE for x in range(food_len)]
 
     boundaries_x = [-1, -1, DIMENSIONS[0], DIMENSIONS[0]]
     boundaries_y = [-1, DIMENSIONS[1], -1, DIMENSIONS[1]]
 
 
-    organism_scat = ax.scatter(org_x, org_y, c="r")
-    food_scat = ax.scatter(food_x, food_y, c="g")
-    boundaries_scat = ax.scatter(boundaries_x, boundaries_y, c="y")
-    return (organism_scat, food_scat)
+    organism_scat = ax[0].scatter(org_x, org_y, c="r", s=org_marker_size)
+    food_scat = ax[0].scatter(food_x, food_y, c="g", s=food_marker_size)
+    boundaries_scat = ax[0].scatter(boundaries_x, boundaries_y, c="y")
 
-fig, ax = plt.subplots()
+    time_x = [x for x in range(frame)]
+
+    # Sometimes animation_update gets called multiple times for the same frame
+    # so we should only update when it's a new frame
+    if len(time_x) > len(food_y_stack):
+        food_y_stack = food_y_stack + [food_len]
+        org_y_stack = org_y_stack + [org_len]
+
+    color_map = ["green", "red"]
+    ax[1].stackplot(time_x, food_y_stack, org_y_stack, colors=color_map)
+
+    return (organism_scat, food_scat, boundaries_scat)
+
+fig, ax = plt.subplots(2, 1, height_ratios=(80, 20))
 
 
-scat = ax.scatter(0, 0, c="b", s=5, )
+scat = ax[0].scatter(0, 0, c="b", s=5, )
+ax[0].set_aspect('equal', adjustable='box')
 
 ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100)
 
