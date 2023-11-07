@@ -13,7 +13,7 @@ import numpy as np
 import tensorflow as tf
 from tf_agents.utils.common import function
 from tf_agents.policies import policy_saver
-import os
+import sys
 from enum import Enum
 
 import matplotlib.pyplot as plt
@@ -27,19 +27,26 @@ CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS']
 food_positions = {}
 organism_positions = {}
 
-GAME_STEPS = 50
+MAX_ENERGY = 15
+VISION_DISTANCE = 3
+
+GAME_STEPS = 200
 DIMENSIONS = (10, 10)
 INITIAL_FOOD = 50
 INITIAL_ORG = 10
 FOOD_SPAWN_RATE = 1
+FOOD_SPAWN_PERC = 80
+REPRODUCE_PROB = 80
 MARKER_SIZE = 32
 
 # GAME_STEPS = 200
 # DIMENSIONS = (100, 100)
 # INITIAL_FOOD = 4000
 # INITIAL_ORG = 500
-# MARKER_SIZE = 4
+# MARKER_SIZE = 8
 # FOOD_SPAWN_RATE = 100
+# FOOD_SPAWN_PERC = 80
+# REPRODUCE_PROB = 80
 
 game_history = []
 food_y_stack = []
@@ -54,8 +61,8 @@ class Food:
 class Organism:
     neural_net = None
     position = None
-    vision_distance = 3
-    max_energy = 15
+    vision_distance = VISION_DISTANCE
+    max_energy = MAX_ENERGY
 
     def __init__(self, position, neural_net):
         self.position = position
@@ -107,7 +114,7 @@ class Organism:
 class Driver:
     # 20% chance to spawn 1 food each frame
     food_spawn_rate = FOOD_SPAWN_RATE
-    food_spawn_perc = 20
+    food_spawn_perc = FOOD_SPAWN_PERC
 
     def __init__(self, dimensions, initial_food_count, initial_organism_count):
         self.organisms = []
@@ -118,9 +125,15 @@ class Driver:
         self._fill_cell_contents()
     
     def track_board(self):
+        org_pos = [x.position for x in self.organisms]
+        org_energy = [x.energy for x in self.organisms]
         step_data = {
             "food_positions": list(food_positions.keys()).copy(),
-            "organism_positions": list(organism_positions.keys()).copy(),
+            "organism_positions": org_pos,
+            "organism_energies": org_energy,
+            # Testing
+            "org0_view": self.organisms[0]._look_around() if len(self.organisms) > 0 else [[]],
+            "org0_id": id(self.organisms[0]) if len(self.organisms) > 0 else "NONE",
         }
         game_history.append(step_data)
 
@@ -142,7 +155,7 @@ class Driver:
     def _add_new_food(self, food_count):
         food_tracker = food_count
 
-        # Make sure we don't try to spawn food if all tiles already have food
+        # Make sure we don't try to spawn food if too many tiles already have food
         if len(food_positions) == (DIMENSIONS[0] * DIMENSIONS[1]) - self.food_spawn_rate:
             return
 
@@ -170,9 +183,11 @@ class Driver:
             else:
                 organism_positions[(x_rand_cell, y_rand_cell)] = True
                 organism_tracker -= 1
-                organism = Organism((x_rand_cell, y_rand_cell), (4,))
-                
-                self.organisms.append(organism)
+
+                if random.randint(0, 100) < REPRODUCE_PROB:
+                    organism = Organism((x_rand_cell, y_rand_cell), (4,))
+                    
+                    self.organisms.append(organism)
     
     def _get_target_pos(self, position, action):
         target_position = list(position)
@@ -236,7 +251,7 @@ class Driver:
                 organism_offspring = Organism(organism.position, [])
                 self.organisms.append(organism_offspring)
 
-        if random.randint(0, 100) > self.food_spawn_perc:
+        if random.randint(0, 100) < self.food_spawn_perc:
             self._add_new_food(self.food_spawn_rate)
             
         
@@ -251,6 +266,17 @@ class Driver:
             result = self._step()
 
 
+def input_validation():
+    if INITIAL_FOOD > DIMENSIONS[0] * DIMENSIONS[1]:
+        print("Initial food count exceeds space")
+        sys.exit(-1)
+    
+    if INITIAL_ORG > DIMENSIONS[0] * DIMENSIONS[1]:
+        print("Initial organism count exceeds space")
+        sys.exit(-1)
+
+input_validation()
+
 driver = Driver((DIMENSIONS[0], DIMENSIONS[1]), INITIAL_FOOD, INITIAL_ORG)
 
 driver.run(max_steps=GAME_STEPS)
@@ -263,6 +289,7 @@ def animation_update(frame):
     global org_y_stack
 
     ax.clear()
+    ax2.clear()
 
     game_step = game_history[frame]
 
@@ -271,6 +298,10 @@ def animation_update(frame):
 
     org_x = [x for x,y in game_step.get("organism_positions")]
     org_y = [y for x,y in game_step.get("organism_positions")]
+    org_alphas = [1.0 for x in range(org_len)]
+    # org_alphas = [x / (MAX_ENERGY * 2.0) + 0.5 for x in game_step.get("organism_energies")]
+
+    # org_marker_size = [MARKER_SIZE * (x / (MAX_ENERGY * 2.0) + 0.5) for x in game_step.get("organism_energies")]
     org_marker_size = [MARKER_SIZE for x in range(org_len)]
 
     food_x = [x for x,y in game_step.get("food_positions")]
@@ -281,9 +312,11 @@ def animation_update(frame):
     boundaries_y = [-1, DIMENSIONS[1], -1, DIMENSIONS[1]]
 
 
-    organism_scat = ax.scatter(org_x, org_y, c="r", s=org_marker_size)
-    food_scat = ax.scatter(food_x, food_y, c="g", s=food_marker_size)
-    boundaries_scat = ax.scatter(boundaries_x, boundaries_y, c="y")
+    if org_len > 0:
+        ax.scatter(org_x, org_y, c="r", s=org_marker_size, alpha=org_alphas)
+    if food_len > 0:
+        ax.scatter(food_x, food_y, c="g", s=food_marker_size)
+    ax.scatter(boundaries_x, boundaries_y, c="y")
 
     time_x = [x for x in range(frame)]
 
@@ -300,15 +333,57 @@ def animation_update(frame):
     color_map = ["green", "red"]
     ax1.stackplot(time_x, food_y_stack, org_y_stack, colors=color_map)
 
-    return (organism_scat, food_scat, boundaries_scat)
+    org0_view = game_step.get("org0_view")
 
-fig, ax = plt.subplots(figsize=(8,10))
+    # Does organism[0] even exist? has the population gone extinct?
+    if len(org0_view[0]) > 0:
+        
+        org0_food_x = []
+        org0_food_y = []
+        org0_orgs_x = []
+        org0_orgs_y = []
+        org0_oob_x = []
+        org0_oob_y = []
+        for x in range(VISION_DISTANCE * 2 + 1):
+            for y in range(VISION_DISTANCE * 2 + 1):
+                if org0_view[x][y] == CellContents.FOOD.value:
+                    org0_food_x.append(x)
+                    org0_food_y.append(y)
+                elif org0_view[x][y] == CellContents.ORGANISM.value:
+                    org0_orgs_x.append(x)
+                    org0_orgs_y.append(y)
+                elif org0_view[x][y] == CellContents.OUTOFBOUNDS.value:
+                    org0_oob_x.append(x)
+                    org0_oob_y.append(y)
+        ax2.scatter(VISION_DISTANCE, VISION_DISTANCE, c="purple")
+        if len(org0_food_x) > 0:
+            ax2.scatter(org0_food_x, org0_food_y, c="g")
+        if len(org0_orgs_x) > 0:
+            ax2.scatter(org0_orgs_x, org0_orgs_y, c="r")
+        if len(org0_oob_x) > 0:
+            ax2.scatter(org0_oob_x, org0_oob_y, c="black")
+
+    org_boundaries_x = [-1, -1, VISION_DISTANCE * 2 + 1, VISION_DISTANCE * 2 + 1]
+    org_boundaries_y = [-1, VISION_DISTANCE * 2 + 1, -1, VISION_DISTANCE * 2 + 1]
+
+    ax2.scatter(org_boundaries_x, org_boundaries_y, c="y")
+    
+    ax.set_title("Ecosystem")
+    ax1.set_title("Food vs Organism Count")
+    ax2.set_title(f"Organism {game_step.get('org0_id')} view")
+    
+    return
+
+fig, ax = plt.subplots(figsize=(5,10))
+# plt.axis('off')
 
 divider = make_axes_locatable(ax)
-ax1 = divider.append_axes("bottom", size=0.8, pad=0.1)
+ax1 = divider.append_axes("bottom", size=0.8, pad=0.5)
+ax2 = divider.append_axes("bottom", size=2, pad=0.5,)
 
 scat = ax.scatter(0, 0, c="b", s=5, )
-# ax.set_aspect('equal', adjustable='box')
+ax.set_aspect('equal', adjustable='box')
+ax2.set_aspect('equal', adjustable='box')
 
 ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100, repeat=False)
 
