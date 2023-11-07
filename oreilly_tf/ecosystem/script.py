@@ -18,6 +18,7 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 OrganismAction = Enum('OrganismAction', ['UP', 'RIGHT', 'DOWN', 'LEFT'], start=0)
 CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS'], start=0)
@@ -25,11 +26,21 @@ CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS']
 
 food_positions = {}
 organism_positions = {}
+
+GAME_STEPS = 50
 DIMENSIONS = (10, 10)
-GAME_STEPS = 200
 INITIAL_FOOD = 50
 INITIAL_ORG = 10
-MARKER_SIZE = 4
+FOOD_SPAWN_RATE = 1
+MARKER_SIZE = 32
+
+# GAME_STEPS = 200
+# DIMENSIONS = (100, 100)
+# INITIAL_FOOD = 4000
+# INITIAL_ORG = 500
+# MARKER_SIZE = 4
+# FOOD_SPAWN_RATE = 100
+
 game_history = []
 food_y_stack = []
 org_y_stack = []
@@ -95,7 +106,7 @@ class Organism:
 
 class Driver:
     # 20% chance to spawn 1 food each frame
-    food_spawn_rate = 1
+    food_spawn_rate = FOOD_SPAWN_RATE
     food_spawn_perc = 20
 
     def __init__(self, dimensions, initial_food_count, initial_organism_count):
@@ -251,7 +262,7 @@ def animation_update(frame):
     global food_y_stack
     global org_y_stack
 
-    ax[0].clear()
+    ax.clear()
 
     game_step = game_history[frame]
 
@@ -270,30 +281,36 @@ def animation_update(frame):
     boundaries_y = [-1, DIMENSIONS[1], -1, DIMENSIONS[1]]
 
 
-    organism_scat = ax[0].scatter(org_x, org_y, c="r", s=org_marker_size)
-    food_scat = ax[0].scatter(food_x, food_y, c="g", s=food_marker_size)
-    boundaries_scat = ax[0].scatter(boundaries_x, boundaries_y, c="y")
+    organism_scat = ax.scatter(org_x, org_y, c="r", s=org_marker_size)
+    food_scat = ax.scatter(food_x, food_y, c="g", s=food_marker_size)
+    boundaries_scat = ax.scatter(boundaries_x, boundaries_y, c="y")
 
     time_x = [x for x in range(frame)]
 
     # Sometimes animation_update gets called multiple times for the same frame
     # so we should only update when it's a new frame
+    if frame == 0:
+        food_y_stack = []
+        org_y_stack = []
+        ax1.clear()
     if len(time_x) > len(food_y_stack):
         food_y_stack = food_y_stack + [food_len]
         org_y_stack = org_y_stack + [org_len]
 
     color_map = ["green", "red"]
-    ax[1].stackplot(time_x, food_y_stack, org_y_stack, colors=color_map)
+    ax1.stackplot(time_x, food_y_stack, org_y_stack, colors=color_map)
 
     return (organism_scat, food_scat, boundaries_scat)
 
-fig, ax = plt.subplots(2, 1, height_ratios=(80, 20))
+fig, ax = plt.subplots(figsize=(8,10))
 
+divider = make_axes_locatable(ax)
+ax1 = divider.append_axes("bottom", size=0.8, pad=0.1)
 
-scat = ax[0].scatter(0, 0, c="b", s=5, )
-ax[0].set_aspect('equal', adjustable='box')
+scat = ax.scatter(0, 0, c="b", s=5, )
+# ax.set_aspect('equal', adjustable='box')
 
-ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100)
+ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100, repeat=False)
 
 plt.show()
 
