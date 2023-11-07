@@ -1,17 +1,7 @@
-from tf_agents.environments import utils
-from tf_agents.environments import wrappers
-from tf_agents.environments.tf_py_environment import TFPyEnvironment
-from tf_agents.networks.q_network import QNetwork
-from tf_agents.agents.dqn.dqn_agent import DqnAgent
-from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.metrics import tf_metrics
-from tf_agents.drivers.dynamic_step_driver import DynamicStepDriver
-from tf_agents.policies.random_tf_policy import RandomTFPolicy
 import random
 from tensorflow import keras 
 import numpy as np
 import tensorflow as tf
-from tf_agents.utils.common import function
 from tf_agents.policies import policy_saver
 import sys
 from enum import Enum
@@ -30,7 +20,7 @@ organism_positions = {}
 MAX_ENERGY = 15
 VISION_DISTANCE = 3
 
-GAME_STEPS = 200
+GAME_STEPS = 25
 DIMENSIONS = (10, 10)
 INITIAL_FOOD = 50
 INITIAL_ORG = 10
@@ -83,6 +73,7 @@ class Organism:
     def eat_food(self):
         self.energy = self.max_energy
 
+    # TODO: This needs to be debugged. Seems to be inaccurate 
     def _look_around(self):
         # Returns an N by M array of organisms and food within X cells
 
@@ -100,7 +91,8 @@ class Organism:
                 array_y_pos = y_pos + self.vision_distance
 
                 if (x_pos, y_pos) == (0, 0):
-                    observable_space[array_x_pos][array_y_pos] = -1
+                    # The organism doesn't care about its current location (should it? There could be another organism there)
+                    observable_space[array_x_pos][array_y_pos] = CellContents.EMPTY.value
                 elif abs_x_pos >= DIMENSIONS[0] or abs_y_pos >= DIMENSIONS[1] or abs_x_pos < 0 or abs_y_pos < 0:
                     observable_space[array_x_pos][array_y_pos] = CellContents.OUTOFBOUNDS.value
                 elif (abs_x_pos, abs_y_pos) in food_positions:
@@ -112,7 +104,6 @@ class Organism:
         return observable_space
 
 class Driver:
-    # 20% chance to spawn 1 food each frame
     food_spawn_rate = FOOD_SPAWN_RATE
     food_spawn_perc = FOOD_SPAWN_PERC
 
@@ -131,7 +122,7 @@ class Driver:
             "food_positions": list(food_positions.keys()).copy(),
             "organism_positions": org_pos,
             "organism_energies": org_energy,
-            # Testing
+            # Testing (this can probably be retrieved differently at some point)
             "org0_view": self.organisms[0]._look_around() if len(self.organisms) > 0 else [[]],
             "org0_id": id(self.organisms[0]) if len(self.organisms) > 0 else "NONE",
         }
@@ -184,12 +175,20 @@ class Driver:
                 organism_positions[(x_rand_cell, y_rand_cell)] = True
                 organism_tracker -= 1
 
-                if random.randint(0, 100) < REPRODUCE_PROB:
-                    organism = Organism((x_rand_cell, y_rand_cell), (4,))
-                    
-                    self.organisms.append(organism)
+                organism = Organism((x_rand_cell, y_rand_cell), (4,))
+                
+                self.organisms.append(organism)
     
     def _get_target_pos(self, position, action):
+        """Get the position that is targetted based on current position and action
+
+        Args:
+            position (tuple): (x,y) of current position
+            action (int): enum representing a movement action (up, down, left, right)
+
+        Returns:
+            tuple: Target position
+        """
         target_position = list(position)
         if action == OrganismAction.UP.value and position[1] < DIMENSIONS[1] - 1:
             target_position[1] += 1
@@ -203,6 +202,15 @@ class Driver:
         return target_position[0], target_position[1]
 
     def _check_organism_action_results(self, organism_actions):
+        """Determine what the results of the actions will be before updating the organism's states,
+        in case there are conflicts to resolve (two organisms trying to eat the same food)
+
+        Args:
+            organism_actions (dict): dict with key of organism and value of action
+
+        Returns:
+            dict: dict with key organism and value containing final state of organism after all actions
+        """
         food_targets = {}
         final_results = {}
         for organism, action in organism_actions.items():
@@ -226,6 +234,21 @@ class Driver:
         
         return final_results
     
+    def _update_organism(self, organism, result):
+        organism.energy -= 1
+
+        if organism.energy == 0:
+            self.organisms.remove(organism)
+        
+        organism.position = result.get("position")
+        organism_positions[organism.position] = True
+        if "reward" in result:
+            organism.eat_food()
+            if random.randint(0, 100) < REPRODUCE_PROB:
+                organism_offspring = Organism(organism.position, [])
+                self.organisms.append(organism_offspring)
+
+
     def _step(self):
 
         organism_actions = {}
@@ -239,17 +262,7 @@ class Driver:
         organism_positions.clear()
 
         for organism, result in results.items():
-            organism.energy -= 1
-
-            if organism.energy == 0:
-                self.organisms.remove(organism)
-            
-            organism.position = result.get("position")
-            organism_positions[organism.position] = True
-            if "reward" in result:
-                organism.eat_food()
-                organism_offspring = Organism(organism.position, [])
-                self.organisms.append(organism_offspring)
+            self._update_organism(organism, result)
 
         if random.randint(0, 100) < self.food_spawn_perc:
             self._add_new_food(self.food_spawn_rate)
@@ -316,7 +329,7 @@ def animation_update(frame):
         ax.scatter(org_x, org_y, c="r", s=org_marker_size, alpha=org_alphas)
     if food_len > 0:
         ax.scatter(food_x, food_y, c="g", s=food_marker_size)
-    ax.scatter(boundaries_x, boundaries_y, c="y")
+    ax.scatter(boundaries_x, boundaries_y, c="white")
 
     time_x = [x for x in range(frame)]
 
@@ -355,7 +368,7 @@ def animation_update(frame):
                 elif org0_view[x][y] == CellContents.OUTOFBOUNDS.value:
                     org0_oob_x.append(x)
                     org0_oob_y.append(y)
-        ax2.scatter(VISION_DISTANCE, VISION_DISTANCE, c="purple")
+        ax2.scatter(VISION_DISTANCE, VISION_DISTANCE, c="purple", marker='x')
         if len(org0_food_x) > 0:
             ax2.scatter(org0_food_x, org0_food_y, c="g")
         if len(org0_orgs_x) > 0:
@@ -366,7 +379,7 @@ def animation_update(frame):
     org_boundaries_x = [-1, -1, VISION_DISTANCE * 2 + 1, VISION_DISTANCE * 2 + 1]
     org_boundaries_y = [-1, VISION_DISTANCE * 2 + 1, -1, VISION_DISTANCE * 2 + 1]
 
-    ax2.scatter(org_boundaries_x, org_boundaries_y, c="y")
+    ax2.scatter(org_boundaries_x, org_boundaries_y, c="white")
     
     ax.set_title("Ecosystem")
     ax1.set_title("Food vs Organism Count")
