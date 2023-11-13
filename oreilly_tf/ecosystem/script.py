@@ -3,6 +3,10 @@ import numpy as np
 import sys
 from enum import Enum
 
+from evolutionary_keras.models import EvolModel
+from evolutionary_keras.optimizers import NGA
+import tensorflow as tf
+
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -14,7 +18,8 @@ CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS']
 food_positions = {}
 organism_positions = {}
 
-MAX_ENERGY = 15
+MAX_ENERGY = 10
+OLD_AGE = 30
 VISION_DISTANCE = 3
 
 GAME_STEPS = 25
@@ -35,6 +40,15 @@ MARKER_SIZE = 32
 # FOOD_SPAWN_PERC = 80
 # REPRODUCE_PROB = 80
 
+# GAME_STEPS = 500
+# DIMENSIONS = (500, 500)
+# INITIAL_FOOD = 6000
+# INITIAL_ORG = 1000
+# MARKER_SIZE = 0.05
+# FOOD_SPAWN_RATE = 1000
+# FOOD_SPAWN_PERC = 80
+# REPRODUCE_PROB = 80
+
 game_history = []
 food_y_stack = []
 org_y_stack = []
@@ -50,20 +64,23 @@ class Organism:
     position = None
     vision_distance = VISION_DISTANCE
     max_energy = MAX_ENERGY
+    old_age = OLD_AGE
 
-    def __init__(self, position, neural_net):
+    def __init__(self, position, model, nga_optimizer):
         self.position = position
-        self.neural_net = neural_net
+        self.model = model
+        self.nga_optimizer = nga_optimizer
         self.energy = self.max_energy
+        self.age = 0
     
     def _action_policy(self, obs):
-        return random.choice(list(OrganismAction)).value
+        action = list(self.model(obs[np.newaxis])[0])
+        return action.index(max(action))
 
     def get_desired_action(self):
-        # vision = self._look_around()
-        vision = []
-        obs = [self.position, vision]
-        action = self._action_policy(obs)
+        vision = self._look_around().flatten()
+
+        action = self._action_policy(vision)
         
         return action
 
@@ -109,6 +126,7 @@ class Driver:
         self.dimensions = dimensions
         self.initial_food_count = initial_food_count
         self.initial_organism_count = initial_organism_count
+        self.game_over = False
 
         self._fill_cell_contents()
     
@@ -144,7 +162,7 @@ class Driver:
         food_tracker = food_count
 
         # Make sure we don't try to spawn food if too many tiles already have food
-        if len(food_positions) == (DIMENSIONS[0] * DIMENSIONS[1]) - self.food_spawn_rate:
+        if len(food_positions) >= (DIMENSIONS[0] * DIMENSIONS[1]) - self.food_spawn_rate:
             return
 
         while food_tracker > 0:
@@ -156,6 +174,7 @@ class Driver:
             else:
                 food_positions[(x_rand_cell, y_rand_cell)] = True
                 food_tracker -= 1
+
 
     def _fill_cell_contents(self):
         self._add_new_food(self.initial_food_count)
@@ -172,7 +191,15 @@ class Driver:
                 organism_positions[(x_rand_cell, y_rand_cell)] = True
                 organism_tracker -= 1
 
-                organism = Organism((x_rand_cell, y_rand_cell), (4,))
+                inputs = tf.keras.layers.Input(shape=((VISION_DISTANCE * 2 + 1) ** 2,), name='my_input')
+                hidden = tf.keras.layers.Dense(16,)(inputs)
+                outputs = tf.keras.layers.Dense(len(OrganismAction),)(hidden)
+
+                new_nga = NGA(population_size = 1, mutation_rate = 0.2)
+                new_model = EvolModel(inputs, outputs)
+                new_model.compile(new_nga)
+
+                organism = Organism((x_rand_cell, y_rand_cell), new_model, new_nga)
                 
                 self.organisms.append(organism)
     
@@ -233,8 +260,9 @@ class Driver:
     
     def _update_organism(self, organism, result):
         organism.energy -= 1
+        organism.age += 1
 
-        if organism.energy == 0:
+        if organism.energy == 0 or organism.age == OLD_AGE:
             self.organisms.remove(organism)
         
         organism.position = result.get("position")
@@ -242,7 +270,25 @@ class Driver:
         if "reward" in result:
             organism.eat_food()
             if random.randint(0, 100) < REPRODUCE_PROB:
-                organism_offspring = Organism(organism.position, [])
+                organism_optimizer = organism.nga_optimizer
+                mutants = organism_optimizer.create_mutants()
+                
+                weights = mutants[-1]
+
+                inputs = tf.keras.layers.Input(shape=((VISION_DISTANCE * 2 + 1) ** 2,), name='my_input')
+                hidden = tf.keras.layers.Dense(16,)(inputs)
+                outputs = tf.keras.layers.Dense(len(OrganismAction),)(hidden)
+
+                new_nga = NGA(population_size = 1, mutation_rate = 0.05)
+                new_model = EvolModel(inputs, outputs)
+                new_model.set_weights(weights)
+                new_model.compile(new_nga)
+
+
+                x_rand_cell = random.randint(0, self.dimensions[0] - 1)
+                y_rand_cell = random.randint(0, self.dimensions[1] - 1)
+
+                organism_offspring = Organism((x_rand_cell, y_rand_cell), new_model, new_nga)
                 self.organisms.append(organism_offspring)
 
 
@@ -263,6 +309,9 @@ class Driver:
 
         if random.randint(0, 100) < self.food_spawn_perc:
             self._add_new_food(self.food_spawn_rate)
+        
+        if len(self.organisms) == 0:
+            self.game_over = True
             
         
     def run(self, max_steps=100):         
@@ -274,6 +323,10 @@ class Driver:
             self.track_board()
 
             result = self._step()
+
+            if self.game_over:
+                print("No organisms left!")
+                break
 
 
 def input_validation():
@@ -395,7 +448,7 @@ scat = ax.scatter(0, 0, c="b", s=5, )
 ax.set_aspect('equal', adjustable='box')
 ax2.set_aspect('equal', adjustable='box')
 
-ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=GAME_STEPS, interval=100, repeat=False)
+ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=len(game_history), interval=100, repeat=False)
 
 plt.show()
 
