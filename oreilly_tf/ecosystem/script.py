@@ -1,15 +1,32 @@
 import random
 import numpy as np
-import sys
+import sys, os
+import datetime
+import dbm
+import tracemalloc
+import gc
+import _pickle as cPickle
 from enum import Enum
 
-from evolutionary_keras.models import EvolModel
-from evolutionary_keras.optimizers import NGA
+from tensorflow.keras.models import Model
 import tensorflow as tf
+import pickle
+import json
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+# Disable all GPUs because it seems to be causing memory issues?
+try:
+    # Disable all GPUS
+    tf.config.set_visible_devices([], 'GPU')
+    visible_devices = tf.config.get_visible_devices()
+    for device in visible_devices:
+        assert device.device_type != 'GPU'
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
 
 OrganismAction = Enum('OrganismAction', ['UP', 'RIGHT', 'DOWN', 'LEFT'], start=0)
 CellContents = Enum('CellContents', ['EMPTY', 'ORGANISM', 'FOOD', 'OUTOFBOUNDS'], start=0)
@@ -22,11 +39,11 @@ MAX_ENERGY = 10
 OLD_AGE = 30
 VISION_DISTANCE = 3
 
-GAME_STEPS = 25
+GAME_STEPS = 100
 DIMENSIONS = (10, 10)
 INITIAL_FOOD = 50
 INITIAL_ORG = 10
-FOOD_SPAWN_RATE = 1
+FOOD_SPAWN_RATE = 10
 FOOD_SPAWN_PERC = 80
 REPRODUCE_PROB = 80
 MARKER_SIZE = 32
@@ -40,7 +57,7 @@ MARKER_SIZE = 32
 # FOOD_SPAWN_PERC = 80
 # REPRODUCE_PROB = 80
 
-# GAME_STEPS = 500
+# GAME_STEPS = 91
 # DIMENSIONS = (500, 500)
 # INITIAL_FOOD = 6000
 # INITIAL_ORG = 1000
@@ -49,7 +66,8 @@ MARKER_SIZE = 32
 # FOOD_SPAWN_PERC = 80
 # REPRODUCE_PROB = 80
 
-game_history = []
+
+game_history = {}
 food_y_stack = []
 org_y_stack = []
 
@@ -66,10 +84,9 @@ class Organism:
     max_energy = MAX_ENERGY
     old_age = OLD_AGE
 
-    def __init__(self, position, model, nga_optimizer):
+    def __init__(self, position, model):
         self.position = position
         self.model = model
-        self.nga_optimizer = nga_optimizer
         self.energy = self.max_energy
         self.age = 0
     
@@ -86,6 +103,9 @@ class Organism:
 
     def eat_food(self):
         self.energy = self.max_energy
+    
+    def cleanup(self):
+        del self.model
 
     # TODO: This needs to be debugged. Seems to be inaccurate 
     def _look_around(self):
@@ -130,7 +150,7 @@ class Driver:
 
         self._fill_cell_contents()
     
-    def track_board(self):
+    def track_board(self, step):
         org_pos = [x.position for x in self.organisms]
         org_energy = [x.energy for x in self.organisms]
         step_data = {
@@ -141,7 +161,18 @@ class Driver:
             "org0_view": self.organisms[0]._look_around() if len(self.organisms) > 0 else [[]],
             "org0_id": id(self.organisms[0]) if len(self.organisms) > 0 else "NONE",
         }
-        game_history.append(step_data)
+        game_history[step] = step_data
+    
+    def flush_history(self):
+        global game_history
+
+        with dbm.open('gamecache', 'c') as db: 
+            print(len(game_history))
+            for step_num, step_data in game_history.items():
+                print(step_num.to_bytes(2, "big"))
+                db[step_num.to_bytes(2, "big")] = pickle.dumps(step_data)
+            
+        game_history.clear()
 
     # Just for troubleshooting
     def print_board(self):
@@ -195,14 +226,12 @@ class Driver:
                 hidden = tf.keras.layers.Dense(16,)(inputs)
                 outputs = tf.keras.layers.Dense(len(OrganismAction),)(hidden)
 
-                new_nga = NGA(population_size = 1, mutation_rate = 0.2)
-                new_model = EvolModel(inputs, outputs)
-                new_model.compile(new_nga)
+                new_model = Model(inputs, outputs)
 
-                organism = Organism((x_rand_cell, y_rand_cell), new_model, new_nga)
+                organism = Organism((x_rand_cell, y_rand_cell), new_model)
                 
                 self.organisms.append(organism)
-    
+
     def _get_target_pos(self, position, action):
         """Get the position that is targetted based on current position and action
 
@@ -262,34 +291,31 @@ class Driver:
         organism.energy -= 1
         organism.age += 1
 
-        if organism.energy == 0 or organism.age == OLD_AGE:
-            self.organisms.remove(organism)
-        
         organism.position = result.get("position")
         organism_positions[organism.position] = True
         if "reward" in result:
             organism.eat_food()
             if random.randint(0, 100) < REPRODUCE_PROB:
-                organism_optimizer = organism.nga_optimizer
-                mutants = organism_optimizer.create_mutants()
-                
-                weights = mutants[-1]
+                """Create baby with weird mutant genes."""
 
                 inputs = tf.keras.layers.Input(shape=((VISION_DISTANCE * 2 + 1) ** 2,), name='my_input')
                 hidden = tf.keras.layers.Dense(16,)(inputs)
                 outputs = tf.keras.layers.Dense(len(OrganismAction),)(hidden)
 
-                new_nga = NGA(population_size = 1, mutation_rate = 0.05)
-                new_model = EvolModel(inputs, outputs)
-                new_model.set_weights(weights)
-                new_model.compile(new_nga)
+                new_model = Model(inputs, outputs)
+                new_model.set_weights(organism.model.weights)
 
 
                 x_rand_cell = random.randint(0, self.dimensions[0] - 1)
                 y_rand_cell = random.randint(0, self.dimensions[1] - 1)
 
-                organism_offspring = Organism((x_rand_cell, y_rand_cell), new_model, new_nga)
+                organism_offspring = Organism((x_rand_cell, y_rand_cell), new_model)
                 self.organisms.append(organism_offspring)
+
+        if organism.energy == 0 or organism.age == OLD_AGE:
+            self.organisms.remove(organism)
+            organism.cleanup()
+            del organism
 
 
     def _step(self):
@@ -313,20 +339,42 @@ class Driver:
         if len(self.organisms) == 0:
             self.game_over = True
             
+    # def memory_dump(self, step):
+    #     with open(f"memory{step}.pickle", 'wb') as dump:
+    #         xs = []
+    #         for obj in gc.get_objects():
+    #             i = id(obj)
+    #             size = sys.getsizeof(obj, 0)
+    #             referents = [id(o) for o in gc.get_referents(obj) if hasattr(o, '__class__')]
+
+    #             if hasattr(obj, '__class__'):
+    #                 cls = str(obj.__class__)
+    #                 xs.append({'id': i, 'class': cls, 'size': size, 'referents': referents})
+    #         cPickle.dump(xs, dump)
+        
+    #     pass
         
     def run(self, max_steps=100):         
 
         for step in range(max_steps):
             print(f"Running step {step}")
-            
-            # Only enable when you want to animate
-            self.track_board()
 
             result = self._step()
 
+            # Only enable when you want to animate
+            self.track_board(step)
+
+            if not step % 20:
+                self.flush_history()
+            
+
             if self.game_over:
                 print("No organisms left!")
-                break
+                self.flush_history()
+                return step
+        
+        self.flush_history()
+        return max_steps
 
 
 def input_validation():
@@ -342,9 +390,15 @@ input_validation()
 
 driver = Driver((DIMENSIONS[0], DIMENSIONS[1]), INITIAL_FOOD, INITIAL_ORG)
 
-driver.run(max_steps=GAME_STEPS)
+steps_run = driver.run(max_steps=GAME_STEPS)
 
+timestamp = datetime.datetime.now().isoformat()
+os.mkdir(f"models/{timestamp}")
 
+policy_save_count = min(10, len(driver.organisms))
+for i in range(policy_save_count):
+    organism = driver.organisms[i]
+    organism.model.save(f"models/{timestamp}/organism{i}.keras")
 
 
 def animation_update(frame):
@@ -354,7 +408,14 @@ def animation_update(frame):
     ax.clear()
     ax2.clear()
 
-    game_step = game_history[frame]
+    print(f"Rendering frame: {frame}")
+
+    game_step = None
+    with dbm.open('gamecache', 'r') as db:
+        frame_bytes = int(frame).to_bytes(2, "big")
+
+        game_step_bytes = db[frame_bytes]
+        game_step = pickle.loads(game_step_bytes)
 
     food_len = len(game_step.get("food_positions"))
     org_len = len(game_step.get("organism_positions"))
@@ -363,6 +424,11 @@ def animation_update(frame):
     org_y = [y for x,y in game_step.get("organism_positions")]
     org_alphas = [1.0 for x in range(org_len)]
     # org_alphas = [x / (MAX_ENERGY * 2.0) + 0.5 for x in game_step.get("organism_energies")]
+    
+    # Set the color of the organism to red if energy > max_energy / 2
+    # Otherwise, slowly darken the color to black as energy depletes
+    org_colors = [min(255 * x // (MAX_ENERGY // 2), 255) for x in game_step.get("organism_energies")]
+    org_colors_hexs = [f"#{hex(x)[-2:]}0000" for x in org_colors]
 
     # org_marker_size = [MARKER_SIZE * (x / (MAX_ENERGY * 2.0) + 0.5) for x in game_step.get("organism_energies")]
     org_marker_size = [MARKER_SIZE for x in range(org_len)]
@@ -376,7 +442,7 @@ def animation_update(frame):
 
 
     if org_len > 0:
-        ax.scatter(org_x, org_y, c="r", s=org_marker_size, alpha=org_alphas)
+        ax.scatter(org_x, org_y, c=org_colors_hexs, s=org_marker_size, alpha=org_alphas)
     if food_len > 0:
         ax.scatter(food_x, food_y, c="g", s=food_marker_size)
     ax.scatter(boundaries_x, boundaries_y, c="white")
@@ -424,7 +490,7 @@ def animation_update(frame):
         if len(org0_orgs_x) > 0:
             ax2.scatter(org0_orgs_x, org0_orgs_y, c="r")
         if len(org0_oob_x) > 0:
-            ax2.scatter(org0_oob_x, org0_oob_y, c="black")
+            ax2.scatter(org0_oob_x, org0_oob_y, c="blue")
 
     org_boundaries_x = [-1, -1, VISION_DISTANCE * 2 + 1, VISION_DISTANCE * 2 + 1]
     org_boundaries_y = [-1, VISION_DISTANCE * 2 + 1, -1, VISION_DISTANCE * 2 + 1]
@@ -448,8 +514,8 @@ scat = ax.scatter(0, 0, c="b", s=5, )
 ax.set_aspect('equal', adjustable='box')
 ax2.set_aspect('equal', adjustable='box')
 
-ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=len(game_history), interval=100, repeat=False)
+ani = animation.FuncAnimation(fig=fig, func=animation_update, frames=steps_run, interval=100, repeat=False)
 
-plt.show()
+# plt.show()
 
-# ani.save(filename="./pillow_example.gif", writer="pillow")
+ani.save(filename=f"./gifs/{timestamp}.gif", writer="pillow")
