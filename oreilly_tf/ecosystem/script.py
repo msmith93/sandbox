@@ -39,31 +39,35 @@ MAX_ENERGY = 10
 OLD_AGE = 30
 VISION_DISTANCE = 3
 
-GAME_STEPS = 100
-DIMENSIONS = (10, 10)
-INITIAL_FOOD = 50
-INITIAL_ORG = 10
-FOOD_SPAWN_RATE = 10
-FOOD_SPAWN_PERC = 80
-REPRODUCE_PROB = 80
-MARKER_SIZE = 32
-
-# GAME_STEPS = 200
-# DIMENSIONS = (100, 100)
-# INITIAL_FOOD = 4000
-# INITIAL_ORG = 500
-# MARKER_SIZE = 8
-# FOOD_SPAWN_RATE = 100
+# GAME_STEPS = 100
+# DIMENSIONS = (10, 10)
+# INITIAL_FOOD = 50
+# INITIAL_ORG = 10
+# FOOD_SPAWN_RATE = 10
 # FOOD_SPAWN_PERC = 80
+# FOOD_SPAWN_MIN_PERC = 80
 # REPRODUCE_PROB = 80
+# MARKER_SIZE = 32
+
+GAME_STEPS = 5000
+DIMENSIONS = (100, 100)
+INITIAL_FOOD = 2000
+INITIAL_ORG = 500
+MARKER_SIZE = 8
+FOOD_SPAWN_RATE = 80
+FOOD_SPAWN_MIN_RATE = 10
+FOOD_SPAWN_PERC = 100
+FOOD_SPAWN_MIN_PERC = 100
+REPRODUCE_PROB = 100
 
 # GAME_STEPS = 91
-# DIMENSIONS = (500, 500)
+# DIMENSIONS = (500, 50food_spawn_rate0)
 # INITIAL_FOOD = 6000
 # INITIAL_ORG = 1000
 # MARKER_SIZE = 0.05
 # FOOD_SPAWN_RATE = 1000
 # FOOD_SPAWN_PERC = 80
+# FOOD_SPAWN_MIN_PERC = 80
 # REPRODUCE_PROB = 80
 
 
@@ -302,8 +306,13 @@ class Driver:
                 hidden = tf.keras.layers.Dense(16,)(inputs)
                 outputs = tf.keras.layers.Dense(len(OrganismAction),)(hidden)
 
+                new_weights_0 = organism.model.weights[0] * random.choice([1.01, 0.99])
+                new_weights_1 = organism.model.weights[1]
+                new_weights_2 = organism.model.weights[2] * random.choice([1.01, 0.99])
+                new_weights_3 = organism.model.weights[3]
+
                 new_model = Model(inputs, outputs)
-                new_model.set_weights(organism.model.weights)
+                new_model.set_weights([new_weights_0, new_weights_1, new_weights_2, new_weights_3])
 
 
                 x_rand_cell = random.randint(0, self.dimensions[0] - 1)
@@ -366,6 +375,8 @@ class Driver:
 
             if not step % 20:
                 self.flush_history()
+                self.food_spawn_perc = max(self.food_spawn_perc * 0.95, FOOD_SPAWN_MIN_PERC)
+                self.food_spawn_rate = max(self.food_spawn_rate * 0.95, FOOD_SPAWN_MIN_RATE)
             
 
             if self.game_over:
